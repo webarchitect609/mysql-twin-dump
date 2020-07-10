@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+
+# Initialize variables:
+PROG_NAME="mysqltwindump"
+DB_HOST="localhost"
+DB_PORT="3306"
+DB_USER=""
+DB_PASSWORD=""
+DB_NAME=""
+DUMP_FILENAME="dump_$(date +%Y-%m-%d_%H-%M).sql.bz2"
+DRY_RUN=false
+
+EXCLUDE_TABLES="b_event_log
+b_event
+b_perf_sql"
+
+EXCLUDE_TABLES_INLINE=""
+for TABLE in $EXCLUDE_TABLES
+do
+    EXCLUDE_TABLES_INLINE="${EXCLUDE_TABLES_INLINE} ${TABLE}"
+done
+
+getopt --options "h::P::u:p:d:o:" \
+       --longoptions "host::,port::,user:,password:,database:,output::,dry-run" \
+       --name "${PROG_NAME}" \
+       -- "$@" > /dev/null
+
+# shellcheck disable=SC2181
+if [ $? -ne 0 ]; then
+  printf "\nNAME:\n" >&2
+  printf "\t%s - Dump Bitrix database\n" $PROG_NAME >&2
+  printf "\nSYNOPSIS:\n" >&2
+  printf "\t%s options\n" $PROG_NAME >&2
+  printf "\nOPTIONS:\n" >&2
+  printf "\t-h, --host\n" >&2
+  printf "\t\tDatabase host\n\n" >&2
+  printf "\t-P, --port\n" >&2
+  printf "\t\tDatabase port\n\n" >&2
+  printf "\t-u, --user\n" >&2
+  printf "\t\tDatabase user name\n\n" >&2
+  printf "\t-p, --password\n" >&2
+  printf "\t\tUser password\n\n" >&2
+  printf "\t-d, --database\n" >&2
+  printf "\t\tDatabase name\n\n" >&2
+  printf "\t-o, --output\n" >&2
+  printf "\t\tOutput *.sql.bz2 file name\n\n" >&2
+  exit $?
+fi
+
+while true; do
+  case "$1" in
+    -h | --host ) DB_HOST="$2"; shift 2 ;;
+    -P | --port ) DB_PORT="$2"; shift 2 ;;
+    -u | --user ) DB_USER="$2"; shift 2 ;;
+    -p | --password ) DB_PASSWORD="$2"; shift 2 ;;
+    -d | --database ) DB_NAME="$2"; shift 2 ;;
+    -o | --output ) DUMP_FILENAME="$2"; shift 2 ;;
+    --dry-run ) DRY_RUN=true; shift ;;
+    * ) break ;;
+  esac
+done
+
+if [ -z "${DUMP_FILENAME}" ]; then
+  DUMP_FILENAME="${DB_NAME}_$(date +%Y-%m-%d_%H-%M).sql.bz2"
+fi
+
+#TODO Добавить запись инструкции на удаление всех таблиц в БД перед началом.
+#TODO Сделать динамическую сборку аргументов `--ignore-table`
+
+echo "Dump ${DB_NAME}@${DB_HOST}:${DB_PORT} to ${DUMP_FILENAME}"
+echo "Packing tables with data, excluding ${EXCLUDE_TABLES_INLINE} tables..."
+if ! $DRY_RUN; then
+  mysqldump --single-transaction \
+            --quick \
+            --ignore-table="${DB_NAME}.b_event_log" \
+            --ignore-table="${DB_NAME}.b_event" \
+            --ignore-table="${DB_NAME}.b_perf_sql" \
+            --ignore-table="${DB_NAME}.b_sms4b"  \
+            --add-drop-table \
+            -h "${DB_HOST}" \
+            -P "${DB_PORT}" \
+            -u "${DB_USER}" \
+            -p"${DB_PASSWORD}" \
+            "${DB_NAME}" | bzip2 -c > "${DUMP_FILENAME}"
+fi
+echo "Packing table structure for ${EXCLUDE_TABLES_INLINE} tables..."
+# shellcheck disable=SC2086
+if ! $DRY_RUN; then
+  mysqldump --single-transaction \
+            --quick \
+            --no-data \
+            --add-drop-table \
+             -h "${DB_HOST}" \
+            -P "${DB_PORT}" \
+            -u "${DB_USER}" \
+            -p"${DB_PASSWORD}" \
+            "${DB_NAME}" \
+            $EXCLUDE_TABLES_INLINE | bzip2 -c >> "${DUMP_FILENAME}"
+  du -sh "${DUMP_FILENAME}"
+fi
