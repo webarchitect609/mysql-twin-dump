@@ -1,8 +1,8 @@
 MySQL Twin Dump
 ===============
-[![Travis Build Status](https://travis-ci.org/webarchitect609/composer-library-skeleton.svg?branch=master)](https://travis-ci.org/webarchitect609/composer-library-skeleton)
-[![Latest version](https://img.shields.io/github/v/tag/webarchitect609/composer-library-skeleton?sort=semver)](https://github.com/webarchitect609/composer-library-skeleton/releases)
-[![License](https://img.shields.io/github/license/webarchitect609/composer-library-skeleton)](LICENSE.md)
+[![Travis Build Status](https://travis-ci.org/webarchitect609/mysql-twin-dump.svg?branch=master)](https://travis-ci.org/webarchitect609/mysql-twin-dump)
+[![Latest version](https://img.shields.io/github/v/tag/webarchitect609/mysql-twin-dump?sort=semver)](https://github.com/webarchitect609/mysql-twin-dump/releases)
+[![License](https://img.shields.io/github/license/webarchitect609/mysql-twin-dump)](LICENSE.md)
 
 **Please, be careful:** this is beta-version so far and currently fixed to be used with Bitrix.
 
