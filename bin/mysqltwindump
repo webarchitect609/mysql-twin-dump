@@ -22,6 +22,8 @@ do
     EXCLUDE_TABLES_INLINE="${EXCLUDE_TABLES_INLINE} ${TABLE}"
 done
 
+MYSQL_DUMP_COMMON_OPTIONS="--single-transaction --quick --add-drop-table --skip-lock-tables --set-gtid-purged=OFF"
+
 getopt --options "h::P::u:p:d:o:" \
        --longoptions "host::,port::,user:,password:,database:,output::,dry-run" \
        --name "${PROG_NAME}" \
@@ -71,14 +73,13 @@ fi
 
 echo "Dump ${DB_NAME}@${DB_HOST}:${DB_PORT} to ${DUMP_FILENAME}"
 echo "Packing tables with data, excluding ${EXCLUDE_TABLES_INLINE} tables..."
+# shellcheck disable=SC2086
 if ! $DRY_RUN; then
-  mysqldump --single-transaction \
-            --quick \
+  mysqldump $MYSQL_DUMP_COMMON_OPTIONS \
             --ignore-table="${DB_NAME}.b_event_log" \
             --ignore-table="${DB_NAME}.b_event" \
             --ignore-table="${DB_NAME}.b_perf_sql" \
             --ignore-table="${DB_NAME}.b_sms4b"  \
-            --add-drop-table \
             -h "${DB_HOST}" \
             -P "${DB_PORT}" \
             -u "${DB_USER}" \
@@ -88,11 +89,8 @@ fi
 echo "Packing table structure for ${EXCLUDE_TABLES_INLINE} tables..."
 # shellcheck disable=SC2086
 if ! $DRY_RUN; then
-  mysqldump --single-transaction \
-            --quick \
-            --no-data \
-            --add-drop-table \
-             -h "${DB_HOST}" \
+  mysqldump $MYSQL_DUMP_COMMON_OPTIONS \
+            -h "${DB_HOST}" \
             -P "${DB_PORT}" \
             -u "${DB_USER}" \
             -p"${DB_PASSWORD}" \
