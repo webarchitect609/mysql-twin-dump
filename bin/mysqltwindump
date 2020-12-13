@@ -2,6 +2,9 @@
 
 set -eo pipefail
 
+# TODO Добавить запись инструкции на удаление всех таблиц в БД перед началом. И такую инструкцию можно добавлять по желанию
+# TODO Добавить тесты
+
 # Initialize variables:
 DB_HOST="localhost"
 DB_PORT="3306"
@@ -17,35 +20,44 @@ declare -a EXCLUDE_CONTENT_TABLES
 MYSQL_DUMP_COMMON_OPTIONS="--single-transaction --quick --add-drop-table --skip-lock-tables --set-gtid-purged=OFF"
 
 function displayUsage() {
-  printf "\nNAME\n" >&2
-  printf "\t%s - Dumps an entire MySQL database to a single *.sql or *.sql.bz2 file, ignoring contents for specific set of tables. \n" "$0" >&2
-  printf "\nSYNOPSIS\n" >&2
-  printf "\t%s %%options%%\n" "$0" >&2
-  printf "\nOPTIONS\n" >&2
-  printf "\t-e, --exclude-content \"table1[ table2 table3...]\"\n" >&2
-  printf "\t\tTables with ignored content. Required.\n\n" >&2
-  printf "\t-d, --database %%database%%\n" >&2
-  printf "\t\tDatabase name. Required.\n\n" >&2
-  printf "\t-u, --user %%user%%\n" >&2
-  printf "\t\tDatabase user name. Required.\n\n" >&2
-  printf "\t-p, --password %%password%%\n" >&2
-  printf "\t\tUser password. Default: don't send password. " >&2
-  printf "If empty line, the password will be asked by mysqldump. " >&2
-  printf "The password must be in quotes, if it has spaces.\n\n" >&2
-  printf "\t-h, --host \"%s\"\n" "${DB_HOST}" >&2
-  printf "\t\tDatabase host.\n\n" >&2
-  printf "\t-P, --port %s\n" "${DB_PORT}" >&2
-  printf "\t\tDatabase port.\n\n" >&2
-  printf "\t-o, --output %%filepath%%\n" >&2
-  printf "\t\tDump filename to write to. Default: stdout\n\n" >&2
-  printf "\t-b, --bzip2\n" >&2
-  printf "\t\tUse bzip2 compression. Default: don't compress.\n\n" >&2
-  printf "\t--dry-run\n" >&2
-  printf "\t\tDon't do anything for real. Just print out commands that would be used in normal operation mode.\n\n" >&2
-  printf "\t-q, --quiet\n" >&2
-  printf "\t\tSuppress any output. Default: print current status.\n\n" >&2
-  printf "\t--help\n" >&2
-  printf "\t\tDisplay this help message.\n\n" >&2
+  echo -e "\n\e[1mNAME\e[0m" >&2
+  echo -e "\t${0} - Dumps an entire MySQL database to a single *.sql or *.sql.bz2 file, ignoring contents for specific set of tables." >&2
+  echo -e "\n\e[1mSYNOPSIS\e[0m" >&2
+  echo -e "\t${0} \e[4m\e[3moptions\e[0m" >&2
+  echo -e "\n\e[1mOPTIONS\e[0m" >&2
+  echo -e "\t\e[1m-e\e[0m, \e[1m--exclude-content\e[0m \e[3mtable_name\e[0m" >&2
+  echo -e "\t\tTable the content of which must be excluded. Can be repeated multiple times. Required.\n" >&2
+  echo -e "\t\e[1m-d\e[0m, \e[1m--database\e[0m \e[3mdatabase\e[0m" >&2
+  echo -e "\t\tDatabase name. Required.\n" >&2
+  echo -e "\t\e[1m-u\e[0m, \e[1m--user\e[0m \e[3muser\e[0m" >&2
+  echo -e "\t\tDatabase user name. Required.\n" >&2
+  echo -e "\t\e[1m-p\e[0m, \e[1m--password\e[0m \e[3mpassword\e[0m" >&2
+  echo -e -n "\t\tUser password. Default: don't send password. " >&2
+  echo -e -n "If empty line, the password will be asked by mysqldump. " >&2
+  echo -e "The password must be in quotes, if it has spaces.\n" >&2
+  echo -e "\t\e[1m-h\e[0m, \e[1m--host\e[0m \e[3m${DB_HOST}\e[0m" >&2
+  echo -e "\t\tDatabase host.\n" >&2
+  echo -e "\t\e[1m-P\e[0m, \e[1m--port\e[0m \e[3m${DB_PORT}\e[0m" >&2
+  echo -e "\t\tDatabase port.\n" >&2
+  echo -e "\t\e[1m-o\e[0m, \e[1m--output\e[0m \e[3mfilepath\e[0m" >&2
+  echo -e "\t\tDump filename to write to. Default: stdout\n" >&2
+  echo -e "\t\e[1m-b\e[0m, \e[1m--bzip2\e[0m" >&2
+  echo -e "\t\tCompress the dump using bzip2. Default: don't compress.\n" >&2
+  echo -e "\t\e[1m--dry-run\e[0m" >&2
+  echo -e "\t\tDon't do anything for real, just print out commands that would be used in the normal operation mode.\n" >&2
+  echo -e "\t\e[1m-q\e[0m, \e[1m--quiet\e[0m" >&2
+  echo -e "\t\tSuppress any output. Default: print current status.\n" >&2
+  echo -e "\t\e[1m--help\e[0m" >&2
+  echo -e "\t\tDisplay this help message.\n" >&2
+  echo -e "\n\e[1mCOPYRIGHT\e[0m" >&2
+  echo -e "\t(c) 2020, \e[1mSergey Gripinskiy web-architect@mail.ru\e[0m All rights reserved.\n" >&2
+  echo -e "\n\e[1mLICENCE\e[0m" >&2
+  echo -e "\t\e[1mBSD 3-Clause License\e[0m\n" >&2
+  echo -e "Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:\n" >&2
+  echo -e "\tRedistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.\n" >&2
+  echo -e "\tRedistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.\n" >&2
+  echo -e "\tNeither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.\n" >&2
+  echo -e "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n" >&2
   exit
 }
 
@@ -64,7 +76,7 @@ while true ; do
     -e | --exclude-content )
       # We need array in here.
       # shellcheck disable=SC2206
-      EXCLUDE_CONTENT_TABLES=($2); shift 2 ;;
+      EXCLUDE_CONTENT_TABLES=(${EXCLUDE_CONTENT_TABLES[*]} $2); shift 2 ;;
     -b | --bzip2 ) BZIP=true; shift ;;
     -q | --quiet ) QUIET=true; shift ;;
     -o | --output ) OUTPUT_FILENAME="$2"; shift 2 ;;
@@ -75,7 +87,7 @@ while true ; do
 done
 
 if [[ -z "${EXCLUDE_CONTENT_TABLES[*]}" ]]; then
-  echo "Missing tables with excluded content" >&2
+  echo "Missing table names for content exclusion" >&2
   displayUsage
 fi
 if [[ -z "${DB_USER}" ]]; then
@@ -86,10 +98,6 @@ if [[ -z "${DB_NAME}" ]]; then
   echo "Missing database" >&2
   displayUsage
 fi
-
-
-# TODO Добавить запись инструкции на удаление всех таблиц в БД перед началом.
-#      И такую инструкцию можно добавлять по желанию
 
 if [[ $USE_PASSWORD ]]; then
   PASSWORD_OPTION="-p\"${DB_PASSWORD}\""

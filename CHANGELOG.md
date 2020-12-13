@@ -1,6 +1,16 @@
 Changelog
 =========
 
+0.2.0
+-----
+
+### Changed:
+- Help message formatted and well-tuned
+
+### BREAKING CHANGES
+- Option `--exclude-content` or `-e` can be repeated multiple times, no more need to specify tables in double quotes
+  separated by spaces
+
 0.1.0
 -----
 
