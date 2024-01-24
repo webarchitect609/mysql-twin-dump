@@ -2,158 +2,192 @@
 
 set -eo pipefail
 
-# TODO Добавить запись инструкции на удаление всех таблиц в БД перед началом. И такую инструкцию можно добавлять по желанию
 # TODO Добавить тесты
 
-# Initialize variables:
-DB_HOST="localhost"
-DB_PORT="3306"
-DB_USER=""
-DB_PASSWORD=""
-DB_NAME=""
-OUTPUT_FILENAME=""
-DRY_RUN=""
-BZIP=""
-QUIET=""
-USE_PASSWORD=""
-declare -a EXCLUDE_CONTENT_TABLES
-MYSQL_DUMP_COMMON_OPTIONS="--single-transaction --quick --add-drop-table --skip-lock-tables --set-gtid-purged=OFF"
-
-function displayUsage() {
-  echo -e "\n\e[1mNAME\e[0m" >&2
-  echo -e "\t${0} - Dumps an entire MySQL database to a single *.sql or *.sql.bz2 file, ignoring contents for specific set of tables." >&2
-  echo -e "\n\e[1mSYNOPSIS\e[0m" >&2
-  echo -e "\t${0} \e[4m\e[3moptions\e[0m" >&2
-  echo -e "\n\e[1mOPTIONS\e[0m" >&2
-  echo -e "\t\e[1m-e\e[0m, \e[1m--exclude-content\e[0m \e[3mtable_name\e[0m" >&2
-  echo -e "\t\tTable the content of which must be excluded. Can be repeated multiple times. Required.\n" >&2
-  echo -e "\t\e[1m-d\e[0m, \e[1m--database\e[0m \e[3mdatabase\e[0m" >&2
-  echo -e "\t\tDatabase name. Required.\n" >&2
-  echo -e "\t\e[1m-u\e[0m, \e[1m--user\e[0m \e[3muser\e[0m" >&2
-  echo -e "\t\tDatabase user name. Required.\n" >&2
-  echo -e "\t\e[1m-p\e[0m, \e[1m--password\e[0m \e[3mpassword\e[0m" >&2
-  echo -e -n "\t\tUser password. Default: don't send password. " >&2
-  echo -e -n "If empty line, the password will be asked by mysqldump. " >&2
-  echo -e "The password must be in quotes, if it has spaces.\n" >&2
-  echo -e "\t\e[1m-h\e[0m, \e[1m--host\e[0m \e[3m${DB_HOST}\e[0m" >&2
-  echo -e "\t\tDatabase host.\n" >&2
-  echo -e "\t\e[1m-P\e[0m, \e[1m--port\e[0m \e[3m${DB_PORT}\e[0m" >&2
-  echo -e "\t\tDatabase port.\n" >&2
-  echo -e "\t\e[1m-o\e[0m, \e[1m--output\e[0m \e[3mfilepath\e[0m" >&2
-  echo -e "\t\tDump filename to write to. Default: stdout\n" >&2
-  echo -e "\t\e[1m-b\e[0m, \e[1m--bzip2\e[0m" >&2
-  echo -e "\t\tCompress the dump using bzip2. Default: don't compress.\n" >&2
-  echo -e "\t\e[1m--dry-run\e[0m" >&2
-  echo -e "\t\tDon't do anything for real, just print out commands that would be used in the normal operation mode.\n" >&2
-  echo -e "\t\e[1m-q\e[0m, \e[1m--quiet\e[0m" >&2
-  echo -e "\t\tSuppress any output. Default: print current status.\n" >&2
-  echo -e "\t\e[1m--help\e[0m" >&2
-  echo -e "\t\tDisplay this help message.\n" >&2
-  echo -e "\n\e[1mCOPYRIGHT\e[0m" >&2
-  echo -e "\t(c) 2020, \e[1mSergey Gripinskiy web-architect@mail.ru\e[0m All rights reserved.\n" >&2
-  echo -e "\n\e[1mLICENCE\e[0m" >&2
-  echo -e "\t\e[1mBSD 3-Clause License\e[0m\n" >&2
-  echo -e "Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:\n" >&2
-  echo -e "\tRedistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.\n" >&2
-  echo -e "\tRedistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.\n" >&2
-  echo -e "\tNeither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.\n" >&2
-  echo -e "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n" >&2
-  exit
+main() {
+  # declare creates local var, but it must be shared among functions
+  declare -a EXCLUDE_CONTENT_TABLES
+  declare -a MYSQL_DUMP_COMMON_OPTIONS
+  init_vars "$@" &&
+  assert_vars &&
+  dump_data &&
+  dump_structure
 }
 
-getopt --options "h::P::u:p::d:e:bqo:" \
-       --longoptions "host::,port::,user:,password:,database:,exclude-content,bzip2,quiet,output,dry-run,help" \
-       --name "$0" \
-       -- "$@" > /dev/null
+init_vars() {
+  DB_HOST=""
+  DB_PORT=""
+  DB_USER=""
+  DB_PASSWORD=""
+  DB_NAME=""
+  DRY_RUN=""
+  QUIET=""
+  USE_PASSWORD=""
+  MYSQL_DUMP_COMMON_OPTIONS=(
+    "--single-transaction"
+    "--quick"
+    "--add-drop-table"
+    "--add-drop-trigger"
+    "--skip-lock-tables"
+    "--set-gtid-purged=OFF"
+  )
 
-while true ; do
-  case "$1" in
-    -h | --host ) DB_HOST="$2"; shift 2 ;;
-    -P | --port ) DB_PORT="$2"; shift 2 ;;
-    -u | --user ) DB_USER="$2"; shift 2 ;;
-    -p | --password ) DB_PASSWORD="$2"; USE_PASSWORD=true ; shift 2 ;;
-    -d | --database ) DB_NAME="$2"; shift 2 ;;
-    -e | --exclude-content )
-      # We need array in here.
-      # shellcheck disable=SC2206
-      EXCLUDE_CONTENT_TABLES=(${EXCLUDE_CONTENT_TABLES[*]} $2); shift 2 ;;
-    -b | --bzip2 ) BZIP=true; shift ;;
-    -q | --quiet ) QUIET=true; shift ;;
-    -o | --output ) OUTPUT_FILENAME="$2"; shift 2 ;;
-    --dry-run ) DRY_RUN=true; shift ;;
-    --help ) displayUsage ;;
-    * ) break ;;
-  esac
-done
+  getopt --options "h::P::u::p::d:e:q" \
+         --longoptions "host::,port::,user::,password::,database:,exclude-content:,quiet,dry-run,help" \
+         --name "$0" \
+         -- "$@" > /dev/null
+  while true ; do
+    case "$1" in
+      -h | --host ) DB_HOST="$2"; shift 2 ;;
+      -P | --port ) DB_PORT="$2"; shift 2 ;;
+      -u | --user ) DB_USER="$2"; shift 2 ;;
+      -p | --password ) DB_PASSWORD="$2"; USE_PASSWORD=true ; shift 2 ;;
+      -d | --database ) DB_NAME="$2"; shift 2 ;;
+      -e | --exclude-content ) EXCLUDE_CONTENT_TABLES+=("$2") ; shift 2 ;;
+      -q | --quiet ) QUIET=true; shift ;;
+      --dry-run ) DRY_RUN=true; shift ;;
+      --help ) display_usage; exit ;;
+      * ) break ;;
+    esac
+  done
+}
 
-if [[ -z "${EXCLUDE_CONTENT_TABLES[*]}" ]]; then
-  echo "Missing table names for content exclusion" >&2
-  displayUsage
-fi
-if [[ -z "${DB_USER}" ]]; then
-  echo "Missing user" >&2
-  displayUsage
-fi
-if [[ -z "${DB_NAME}" ]]; then
-  echo "Missing database" >&2
-  displayUsage
-fi
+assert_vars() {
+  if [[ -z "${EXCLUDE_CONTENT_TABLES[*]}" ]]; then
+    printf "Missing table names for content exclusion.\n" >&2
+    return 1
+  fi
+  if [[ -z "${DB_NAME}" ]]; then
+    printf "Missing database name.\n" >&2
+    return 1
+  fi
+}
 
-if [[ $USE_PASSWORD ]]; then
-  PASSWORD_OPTION="-p\"${DB_PASSWORD}\""
-else
-  PASSWORD_OPTION=""
-fi
-ACCESS_OPTIONS="-h \"${DB_HOST}\" \
-                -P \"${DB_PORT}\" \
-                -u \"${DB_USER}\" \
-                ${PASSWORD_OPTION} \
-                \"${DB_NAME}\""
+# $1 Stage. If 1, then dump all data, except excluded tables. If 2, then dump only structure of excluded tables. 
+compose_mysqldump_command() {
+  if [[ -z "$1" || $1 != "1" && $1 != "2" ]]; then
+    printf "%s: stage can be either 1 or 2.\n" "${FUNCNAME[0]}" >&2
+    return 4
+  fi
+  printf "mysqldump"
+  if [[ -n "${DB_HOST}" ]]; then
+    printf " --host \"%s\"" "${DB_HOST}"
+  fi
+  if [[ -n "${DB_PORT}" ]]; then
+    printf " --port \"%d\"" "${DB_PORT}"
+  fi
+  if [[ -n "${DB_USER}" ]]; then
+    printf " --user \"%s\"" "${DB_USER}"
+  fi
+  if [[ $USE_PASSWORD ]]; then
+    printf " -p"
+    if [[ -n "${DB_PASSWORD}" ]]; then
+      printf "\"%s\"" "${DB_PASSWORD}"
+    fi
+  fi
+  for OPTION in "${MYSQL_DUMP_COMMON_OPTIONS[@]}" ; do
+    printf " %s" "$OPTION"
+  done
+  if [[ $1 == "1" ]]; then
+    for TABLE in "${EXCLUDE_CONTENT_TABLES[@]}" ; do
+      printf " --ignore-table=\"%s.%s\"" "$DB_NAME" "$TABLE"
+    done
+  fi
+  if [[ $1 == "2" ]]; then
+    printf " --no-data"
+  fi
+  printf " \"%s\"" "$DB_NAME"
+  if [[ $1 == "2" ]]; then
+    for TABLE in "${EXCLUDE_CONTENT_TABLES[@]}" ; do
+      printf " \"%s\"" "$TABLE"
+    done
+  fi
+}
 
-IGNORE_TABLE_OPTIONS=""
-for TABLE in ${EXCLUDE_CONTENT_TABLES[*]} ; do
-    IGNORE_TABLE_OPTIONS="$IGNORE_TABLE_OPTIONS --ignore-table=\"${DB_NAME}.${TABLE}\""
-done
+do_exec_command() {
+  if [[ $DRY_RUN ]]; then
+    printf "\e[3m%s\e[0m\n\n" "$@" >&2
+  else
+    # shellcheck disable=SC2086
+    eval "$@"
+  fi
+}
 
-if [[ ! "$QUIET" ]]; then
-  echo "Dumping ${DB_NAME}@${DB_HOST}:${DB_PORT}" >&2
-  echo "Packing tables with data, excluding ${EXCLUDE_CONTENT_TABLES[*]} ..." >&2
-fi
-COMMAND="mysqldump $MYSQL_DUMP_COMMON_OPTIONS \
-                   $ACCESS_OPTIONS \
-                   $IGNORE_TABLE_OPTIONS"
-if [[ "$BZIP" ]]; then
-  COMMAND="$COMMAND | bzip2 -c"
-fi
-if [[ -n "${OUTPUT_FILENAME}" ]]; then
-  COMMAND="$COMMAND > $OUTPUT_FILENAME"
-fi
-if [[ $DRY_RUN ]]; then
-  echo "$COMMAND" >&2
-else
-  # shellcheck disable=SC2086
-  eval $COMMAND
-fi
+compose_dsn() {
+  if [[ -n "${DB_HOST}" ]]; then
+    printf "%s" "${DB_HOST}"
+  fi
+  if [[ -n "${DB_PORT}" ]]; then
+    printf ":%s" "${DB_PORT}"
+  fi
+  printf "/%s" "${DB_NAME}"
+}
 
-if [[ ! "$QUIET" ]]; then
-  echo "Packing table structure for ${EXCLUDE_CONTENT_TABLES[*]} ..." >&2
-fi
-COMMAND="mysqldump $MYSQL_DUMP_COMMON_OPTIONS \
-                   $ACCESS_OPTIONS \
-                   --no-data \
-                   ${EXCLUDE_CONTENT_TABLES[*]}"
-if [[ "$BZIP" ]]; then
-  COMMAND="$COMMAND | bzip2 -c"
-fi
-if [[ -n "${OUTPUT_FILENAME}" ]]; then
-  COMMAND="$COMMAND >> $OUTPUT_FILENAME"
-fi
-if [[ $DRY_RUN ]]; then
-  echo "$COMMAND" >&2
-else
-  # shellcheck disable=SC2086
-  eval $COMMAND
-fi
-if [[ ! "$QUIET" ]]; then
-  echo "Done." >&2
-fi
+dump_data() {
+    if [[ ! "$QUIET" ]]; then
+      printf "%s packing data, excluding tables: \n\t%s\n\n" "$(compose_dsn)" "${EXCLUDE_CONTENT_TABLES[*]}" >&2
+    fi
+    do_exec_command "$(compose_mysqldump_command 1)"
+}
+
+dump_structure() {
+    if [[ ! "$QUIET" ]]; then
+      printf "%s packing structure of tables: \n\t%s\n\n" "$(compose_dsn)" "${EXCLUDE_CONTENT_TABLES[*]}" >&2
+    fi
+    do_exec_command "$(compose_mysqldump_command 2)"
+}
+
+display_usage() {
+  local EXECUTABLE
+  EXECUTABLE="$(basename "$0")"
+  printf \
+"\n\e[1mNAME\e[0m
+\t%s - Dumps an entire MySQL database, ignoring content for specific set of tables.
+\n\e[1mSYNOPSIS\e[0m
+\t%s \e[4m\e[3moptions\e[0m > file.sql
+\n\e[1mOPTIONS\e[0m
+\t\e[1m-e\e[0m, \e[1m--exclude-content\e[0m \e[3mtable_name\e[0m
+\t\tTable the content of which must be excluded. Can be repeated multiple times. Required.\n
+\t\e[1m-d\e[0m, \e[1m--database\e[0m \e[3mdatabase\e[0m
+\t\tDatabase name. Required.\n
+\t\e[1m-u\e[0m, \e[1m--user\e[0m \e[3muser\e[0m
+\t\tDatabase user name.\n
+\t\e[1m-p\e[0m, \e[1m--password\e[0m \e[3mpassword\e[0m
+\t\tUser password. Default: don't send password. If empty line, the password will be asked by mysqldump. The password must be in quotes, if it has spaces.\n
+\t\e[1m-h\e[0m, \e[1m--host\e[0m
+\t\tDatabase host.\n
+\t\e[1m-P\e[0m, \e[1m--port\e[0m
+\t\tDatabase port.\n
+\t\e[1m--dry-run\e[0m
+\t\tDon't do anything for real, just print out commands that would be executed.\n
+\t\e[1m-q\e[0m, \e[1m--quiet\e[0m
+\t\tSuppress any output. Default: print current status.\n
+\t\e[1m--help\e[0m
+\t\tDisplay this help message.\n
+\n\e[1mCOPYRIGHT\e[0m
+\t(c) 2020—%d, \e[1mSergey Gripinskiy web-architect@mail.ru\e[0m All rights reserved.\n
+\n\e[1mLICENCE\e[0m
+\t\e[1mBSD 3-Clause License\e[0m\n
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the \
+following conditions are met:\n
+\tRedistributions of source code must retain the above copyright notice, this list of conditions and the following \
+disclaimer.\n
+\tRedistributions in binary form must reproduce the above copyright notice, this list of conditions and the following \
+disclaimer in the documentation and/or other materials provided with the distribution.\n
+\tNeither the name of the copyright holder nor the names of its contributors may be used to endorse or promote \
+products derived from this software without specific prior written permission.\n
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, \
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE \
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, \
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR \
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, \
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE \
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n" \
+"$EXECUTABLE" \
+"$EXECUTABLE" \
+"$(date +%Y)" \
+>&2
+  return 1
+}
+
+main "$@"

@@ -10,5 +10,4 @@ source ./mysqltwindump --exclude-content b_event_log \
                        --user "user" \
                        --password "password" \
                        --database "database" \
-                       --bzip2 \
-                       > "mysql-twin-dump_$(date +%Y-%m-%d_%H-%M).sql.bz2"
+                       > "mysql-twin-dump_$(date +%Y-%m-%d_%H-%M).sql"
