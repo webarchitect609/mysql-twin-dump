@@ -1,6 +1,17 @@
 Changelog
 =========
 
+0.3.0
+-----
+
+### Changed:
+
+- respect exit code, so runner of this script can tell if something went wrong.
+
+### BREAKING CHANGES
+- no more zipping or outputting to the file.
+
+
 0.2.0
 -----
 
